@@ -1,0 +1,53 @@
+name: "Ngrok Tunnel Action"
+description: "Tunnel traffic from within a Github Action runner"
+
+branding:
+  icon: "compass"
+  color: "red"
+
+inputs:
+  timeout:
+    description: "Ngrok tunnel deployment timeout"
+    default: "1h"
+  tunnel_type:
+    description: "Type of Ngrok tunnel, tcp or http"
+    required: true
+    default: "tcp"
+  port:
+    description: "The port to forward traffic to"
+    required: true
+  ngrok_authtoken:
+    description: "Ngrok authorization token"
+    required: true
+  domain:
+    description: "Ngrok domain"
+
+outputs:
+  tunnel-url:
+    description: "Deployed Ngrok tunnel URL"
+    value: ${{ steps.print-tunnel-url.outputs.tunnel-url }}
+
+runs:
+  using: "composite"
+  steps:
+    - run: curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null && echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list && sudo apt update && sudo apt install ngrok
+      shell: bash
+    - id: ngrok-v
+      run: echo "::set-output name=ngrok-version::$( ngrok --version )"
+      shell: bash
+    - run: echo ${{ steps.ngrok-v.outputs.ngrok-version }}
+      shell: bash
+    - run: ngrok authtoken ${{ inputs.ngrok_authtoken }}
+      shell: bash
+    - if: "${{ inputs.domain == '' }}"
+      run: ( timeout ${{ inputs.timeout }} ngrok ${{ inputs.tunnel_type }} ${{ inputs.port }} ) &
+      shell: bash
+    - if: "${{ inputs.domain != '' }}"
+      run: ( timeout ${{ inputs.timeout }} ngrok ${{ inputs.tunnel_type }} --domain ${{ inputs.domain }} ${{ inputs.port }} ) &
+      shell: bash
+
+    - id: print-tunnel-url
+      run: echo "::set-output name=tunnel-url::$( curl -sq http://127.0.0.1:4040/api/tunnels/command_line | grep -m 1 -o "[-0-9a-z]*\.ngrok.io" | head -1 )"
+      shell: bash
+    - run: echo ${{ steps.print-tunnel-url.outputs.tunnel-url }}
+      shell: bash
